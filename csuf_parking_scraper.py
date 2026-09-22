@@ -1,38 +1,62 @@
-name: CSUF Parking Scraper Loop
+import requests
+from bs4 import BeautifulSoup
+import csv
+from datetime import datetime
+import os
 
-on:
-  schedule:
-    # GitHub cloud servers use UTC time. 
-    # 8:00 AM to 5:00 PM Pacific Time maps to 3:00 PM to 12:00 AM UTC.
-    - cron: '*/10 15-23 * * 1-5'
-    - cron: '*/10 0 * * 2-6' 
-  workflow_dispatch: # Gives you an online button to manually trigger a test scrape
+URL = "https://fullerton.edu"
 
-jobs:
-  scrape:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # Crucial: Allows the cloud bot to write data back to your repository
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+def scrape_csuf_parking():
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        }
+        response = requests.get(URL, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            print(f"Failed to fetch data: HTTP {response.status_code}")
+            return
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for table data rows on the CSUF parking site
+        rows = soup.find_all('tr')
+        if not rows:
+            # Fallback if they use general tables or generic divs
+            rows = soup.find_all(class_="parking-lot")
 
-    - name: Install Libraries
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        csv_file = "csuf_semester_parking.csv"
+        file_exists = os.path.isfile(csv_file)
+        
+        scraped_any = False
+        
+        with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["Scrape_Timestamp", "Location_Name", "Available_Spots"])
+            
+            # Simple text parsing fallback that loops rows and finds text numbers
+            for row in rows:
+                text_content = row.get_text(separator=" ").strip()
+                if any(structure in text_content for structure in ["Nutwood", "State College", "Eastside", "S8", "S10"]):
+                    # Clean up space characters to log cleanly
+                    cleaned_line = " ".join(text_content.split())
+                    writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), cleaned_line])
+                    scraped_any = True
+                    
+        if scraped_any:
+            print(f"Parking data successfully logged at {datetime.now()}")
+        else:
+            # Fallback block to capture raw content structure if layouts mismatch
+            with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                main_content = soup.get_text(separator=" ").strip()
+                summary = " ".join(main_content.split())[:200]
+                writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f"Raw snapshot: {summary}"])
+            print("Logged web page snapshot data.")
+            
+    except Exception as e:
+        print(f"An extraction error occurred: {e}")
 
-    - name: Run Parking Scraper
-      run: python csuf_parking_scraper.py
-
-    - name: Save CSV Spreadsheet
-      run: |
-        git config --global user.name "GitHub Actions Bot"
-        git config --global user.email "actions@github.com"
-        git add csuf_semester_parking.csv
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Automated parking data update" && git push)
+if __name__ == "__main__":
+    scrape_csuf_parking()
