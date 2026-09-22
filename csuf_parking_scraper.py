@@ -5,7 +5,7 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
-URL = "https://www.fullerton.edu"  # Use the verified canonical hostname
+URL = "https://parking.fullerton.edu/parkinglotcounts/mobile.aspx"  # Use the verified canonical hostname
 CSV_FILE = "csuf_semester_parking.csv"
 
 
